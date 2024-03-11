@@ -167,7 +167,7 @@ with col2:
         ),
         Metric(
             label="Área total",
-            value=f"{area_total} ha",
+            value=f"{area_total:.2f} ha",
         ),
         Metric(
             label="Top N empresas representam",
