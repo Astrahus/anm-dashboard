@@ -1,3 +1,4 @@
+from abc import ABC
 from dataclasses import dataclass
 
 import pandas as pd
@@ -55,6 +56,8 @@ processos_df = processos_df.loc[
 ].drop(columns=["indicator"])
 fases_df = fases_df.drop(columns=["indicator"])
 
+qtd_empresas = processos_df["nome"].nunique()
+
 # ---- MAIN PAGE ----
 st.title("Dashboard SIGMINE")
 st.markdown("##")
@@ -62,12 +65,16 @@ st.markdown("##")
 col1, col2 = st.columns(2)
 
 
+class Plot(ABC):
+    def __call__(self):
+        raise NotImplementedError
+
+
 @dataclass
-class Barplot:
+class Barplot(Plot):
     df: pd.DataFrame
     title: str
     xlabel: str
-    ylabel: str
 
     def __call__(self):
         fig = px.bar(
@@ -75,16 +82,16 @@ class Barplot:
             x=self.df.values,
             y=self.df.index,
             title=self.title,
-            labels={"x": self.xlabel, "y": self.ylabel},
+            labels={"x": self.xlabel},
             text_auto=True,
             template="plotly_white",
         )
-        fig.update_layout(yaxis={"autorange": "reversed"})
+        fig.update_layout(yaxis={"autorange": "reversed", "title": ""})
         st.plotly_chart(fig)
 
 
 @dataclass
-class Pieplot:
+class Pieplot(Plot):
     df: pd.DataFrame
     title: str
 
@@ -101,7 +108,7 @@ class Pieplot:
 
 
 @dataclass
-class Metric:
+class Metric(Plot):
     label: str
     value: str
     help: str = None
@@ -110,43 +117,51 @@ class Metric:
         st.metric(label=self.label, value=self.value, help=self.help)
 
 
-def plot_section(barplot: Barplot, pieplot: Pieplot, metric1: Metric, metric2: Metric):
-    metric1()
-    barplot()
-    metric2()
-    pieplot()
+def plot_section(*plots: Plot):
+    for plot in plots:
+        plot()
 
 
 with col1:
+    st.markdown("## Quantidade de DMs")
     df = (
         processos_df.value_counts("nome")
         .sort_values(ascending=False)
         .head(filtro_quantidade)
     )
+    sum_ = df.sum()
     plot_section(
+        Metric(
+            label=f"Top {filtro_quantidade} empresas possuem",
+            value=f"{processos_df.shape[0]} DMs",
+        ),
+        Metric(
+            label=f"Outras {qtd_empresas - filtro_quantidade} empresas possuem",
+            value=f"{processos_df.shape[0] - sum_} DMs",
+        ),
         Barplot(
             df,
-            "Quantidade de DMs por empresa",
+            "Quantidade de DMs",
             "Quantidade",
-            "Empresa",
+        ),
+        Metric(
+            label=f"Top {filtro_quantidade} empresas possuem",
+            value=f"{sum_ / processos_df.shape[0] * 100:.2f}% dos DMs",
+        ),
+        Metric(
+            label=f"Outras {qtd_empresas - filtro_quantidade} empresas possuem",
+            value=f"{(processos_df.shape[0] - sum_) / processos_df.shape[0] * 100:.2f}% dos DMs",
         ),
         Pieplot(
             df,
             "Proporção de DMs por empresa",
         ),
-        Metric(
-            label="Total de DMs",
-            value=f"{processos_df.shape[0]}",
-        ),
-        Metric(
-            label="Top N empresas representam",
-            value=f"{df.sum() / processos_df.shape[0] * 100:.2f}%",
-            help="Em relação ao total de DMs",
-        ),
     )
 
 
 with col2:
+    st.markdown("## Área total")
+
     area_total = processos_df["area_ha"].sum()
     df = (
         processos_df.groupby("nome")["area_ha"]
@@ -154,25 +169,32 @@ with col2:
         .sort_values(ascending=False)
         .head(filtro_quantidade)
     )
+    sum_ = df.sum()
     plot_section(
-        Barplot(
-            df,
-            "Área total por empresa",
-            "Área (ha)",
-            "Empresa",
-        ),
-        Pieplot(
-            df,
-            "Proporção de área total por empresa",
-        ),
         Metric(
-            label="Área total",
+            label=f"Top {filtro_quantidade} empresas possuem",
             value=f"{area_total:.2f} ha",
         ),
         Metric(
-            label="Top N empresas representam",
-            value=f"{df.sum() / area_total * 100:.2f}%",
-            help="Em relação à área total",
+            label=f"Outras {qtd_empresas - filtro_quantidade} empresas possuem",
+            value=f"{area_total - sum_:.2f} ha",
+        ),
+        Barplot(
+            df,
+            "Área total",
+            "Área (ha)",
+        ),
+        Metric(
+            label=f"Top {filtro_quantidade} empresas possuem",
+            value=f"{sum_ / area_total * 100:.2f}% da área",
+        ),
+        Metric(
+            label=f"Outras {qtd_empresas - filtro_quantidade} empresas possuem",
+            value=f"{(area_total - sum_) / area_total * 100:.2f}% da área",
+        ),
+        Pieplot(
+            df,
+            "Proporção",
         ),
     )
 
