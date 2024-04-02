@@ -55,24 +55,51 @@ dados_processados, quantidade_dms, area_total, quantidade_empresas = processar_d
 
 st.markdown("# Dashboard SIGMINE<br>", unsafe_allow_html=True)
 
+
+def set_fases():
+    for i, _ in enumerate(dados_processados.fase.cat.categories):
+        st.session_state[f"fase_{i}"] = True
+
+
+def reset_fases():
+    for i, _ in enumerate(dados_processados.fase.cat.categories):
+        st.session_state[f"fase_{i}"] = False
+
+
+def set_uf():
+    for i, _ in enumerate(dados_processados.uf.cat.categories):
+        st.session_state[f"uf_{i}"] = True
+
+
+def reset_uf():
+    for i, _ in enumerate(dados_processados.uf.cat.categories):
+        st.session_state[f"uf_{i}"] = False
+
+
 # SIDEDBAR
 with st.sidebar:
     st.markdown("# Configurações")
-    with st.popover("Fases"):
+    with st.popover("Fases", use_container_width=True):
         st.markdown("### Fases")
         ncols = 3
         uf_cols = st.columns(ncols)
         filtro_fases = {}
         for i, fase in enumerate(dados_processados.fase.cat.categories):
-            filtro_fases[fase] = uf_cols[i % ncols].checkbox(fase, True)
+            filtro_fases[fase] = uf_cols[i % ncols].checkbox(
+                fase, value=True, key=f"fase_{i}"
+            )
+        st.button("Selecionar todas", on_click=set_fases)
+        st.button("Desmarcar todas", on_click=reset_fases)
 
-    with st.popover("Estados"):
+    with st.popover("Estados", use_container_width=True):
         st.markdown("### Estados")
         ncols = 4
         uf_cols = st.columns(ncols)
         filtro_uf = {}
         for i, uf in enumerate(dados_processados.uf.cat.categories):
-            filtro_uf[uf] = uf_cols[i % ncols].checkbox(uf, True)
+            filtro_uf[uf] = uf_cols[i % ncols].checkbox(uf, value=True, key=f"uf_{i}")
+        st.button("Selecionar todos", on_click=set_uf)
+        st.button("Desmarcar todos", on_click=reset_uf)
 
     filtro_quantidade = st.number_input(
         "Quantidade de empresas",
@@ -157,11 +184,7 @@ with st.container(border=True):
         quantidade_dms_outras = quantidade_dms - top_n_quantidade
         area_outras = area_total - top_n_area
 
-    (
-        col1,
-        col2,
-        col3,
-    ) = st.columns(3)
+    col1, col2, col3 = st.columns(3)
     col1.metric(
         label="Total de DMs",
         value=f"{round(quantidade_dms / 1000, 2)}k",
@@ -268,6 +291,6 @@ with st.container():
 
 # TABELA DE DADOS FILTRADOS
 st.markdown("## Dados filtrados")
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([4, 1])
 col1.write(dados_processados)
 col2.write(dados_agrupados)
