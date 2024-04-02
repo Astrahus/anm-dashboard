@@ -90,14 +90,13 @@ with st.sidebar:
 
     filtro_incluir_outras = st.checkbox("Incluir 'Outras empresas' nos gráficos")
 
-dados_processados = dados_processados[
-    (
-        dados_processados.fase.isin(
-            {fase for fase, filtro in filtro_fases.items() if filtro}
-        )
-    )
-    & (dados_processados.uf.isin({uf for uf, filtro in filtro_uf.items() if filtro}))
-]
+mask_fases = dados_processados.fase.isin(
+    {fase for fase, filtro in filtro_fases.items() if filtro}
+)
+mask_uf = dados_processados.uf.isin({uf for uf, filtro in filtro_uf.items() if filtro})
+dados_processados = dados_processados[mask_fases & mask_uf].drop_duplicates(
+    subset=("numero", "ano")
+)
 
 dados_agrupados = (
     dados_processados.groupby("nome")
