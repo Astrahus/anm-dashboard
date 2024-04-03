@@ -84,9 +84,18 @@ with st.sidebar:
         ncols = 3
         uf_cols = st.columns(ncols)
         filtro_fases = {}
+        TITULADOS = {
+            "AUTORIZAÇÃO DE PESQUISA",
+            "CONCESSÃO DE LAVRA",
+            "DIREITO DE REQUERER A LAVRA",
+            "LAVRA GARIMPEIRA",
+            "LICENCIAMENTO",
+            "REGISTRO DE EXTRAÇÃO",
+            "REQUERIMENTO DE LAVRA",
+        }
         for i, fase in enumerate(dados_processados.fase.cat.categories):
             filtro_fases[fase] = uf_cols[i % ncols].checkbox(
-                fase, value=True, key=f"fase_{i}"
+                fase, value=(fase in TITULADOS), key=f"fase_{i}"
             )
         st.button("Selecionar todas", on_click=set_fases)
         st.button("Desmarcar todas", on_click=reset_fases)
