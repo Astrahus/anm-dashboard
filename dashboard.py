@@ -195,9 +195,9 @@ def get_top(agrupados):
 top_dms, top_area = get_top(agrupados)
 
 with st.container(border=True):
-    col1, col2 = st.columns(2)
-
     st.markdown("## Gráficos de barras")
+
+    col1, col2 = st.columns(2)
 
     fig = px.bar(
         data_frame=top_dms,
@@ -236,9 +236,9 @@ with st.container(border=True):
     )
 
 with st.container(border=True):
-    col1, col2 = st.columns(2)
-
     st.markdown("## Gráficos de pizza")
+
+    col1, col2 = st.columns(2)
 
     fig = px.pie(
         data_frame=top_dms[top_dms["Tipo"] == "Todos"],
