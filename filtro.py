@@ -65,10 +65,9 @@ class Filtro:
             checkboxes = {}
             for i, fase in enumerate(Callbacks.fases):
                 if not hasattr(st.session_state, f"fase_{i}"):
-                    st.session_state[f"fase_{i}"] = False
+                    st.session_state[f"fase_{i}"] = fase in TITULADOS
                 checkboxes[fase] = cols[i % NCOLS].checkbox(
                     fase,
-                    fase in TITULADOS,
                     key=f"fase_{i}",
                 )
             col1, col2, col3 = st.columns(3)
@@ -86,10 +85,9 @@ class Filtro:
             checkboxes = {}
             for i, uf in enumerate(Callbacks.ufs):
                 if not hasattr(st.session_state, f"uf_{i}"):
-                    st.session_state[f"uf_{i}"] = False
+                    st.session_state[f"uf_{i}"] = True
                 checkboxes[uf] = uf_cols[i % NCOLS].checkbox(
                     uf,
-                    value=True,
                     key=f"uf_{i}",
                 )
             col1, col2 = st.columns(2)
