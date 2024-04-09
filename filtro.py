@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import streamlit as st
 
 TITULADOS = {
@@ -53,6 +55,7 @@ class Filtro:
         with st.sidebar:
             self.fases = self.criar_filtro_fases()
             self.ufs = self.criar_filtro_estados()
+            self.ultima_arrecadacao = self.criar_filtro_ultima_arrecadacao()
             self.quantidade = self.criar_filtro_quantidade()
             self.altura = self.criar_filtro_altura()
             self.usando_titulares = self.fases == TITULADOS
@@ -96,6 +99,18 @@ class Filtro:
 
         estados = {uf for uf, marcado in checkboxes.items() if marcado}
         return estados
+
+    def criar_filtro_ultima_arrecadacao(self):
+        recente = st.checkbox("Filtrar por arrecadação mais recente", value=False)
+        if recente:
+            return st.date_input(
+                "Data de corte",
+                value=datetime.now() - timedelta(weeks=12),
+                min_value=datetime(1930, 1, 1),
+                format="DD/MM/YYYY",
+            )
+
+        return None
 
     def criar_filtro_quantidade(self):
         quantidade = st.number_input(

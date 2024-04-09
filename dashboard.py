@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 
 from collections import namedtuple
@@ -30,40 +31,29 @@ def carregar_grupos():
     return grupos
 
 
-@st.cache_data(show_spinner="Baixando e processando dados...")
+@st.cache_data(show_spinner="Processando dados...")
 def baixar_processos() -> pd.DataFrame:
     conn = estabelecer_conexao()
-    query: pd.DataFrame = conn.query("SELECT * FROM processos", show_spinner=False)
+    query: pd.DataFrame = conn.query(
+        "SELECT * FROM dashboard_vale.dashboard_vale",
+        show_spinner="Baixando dados do banco de dados...",
+    )
 
     query.fase = pd.Categorical(query.fase, ordered=True)
     query.uf = pd.Categorical(query.uf, ordered=True)
-    query.subs = pd.Categorical(query.subs)
 
     grupos = carregar_grupos()
     query.nome = query.nome.replace(grupos)
     return query
 
 
-@st.cache_data(show_spinner=False)
-def baixar_titulares():
-    conn = estabelecer_conexao()
-    query = conn.query("SELECT * FROM processos_titulares", show_spinner=False)
-    return query
-
-
-def filtrar_titulares(processos):
-    titulares = baixar_titulares()
-    return titulares.merge(processos, on=["numero", "ano"])
-
-
 processos = baixar_processos()
 filtro = Filtro(processos)
-
 
 Stats = namedtuple("Stats", ["quantidade", "dms", "area"])
 
 
-def get_agrupados(processos, filtro):
+def get_agrupados(processos: pd.DataFrame, filtro: Filtro):
     mask = processos.uf.isin(filtro.ufs)
     filtrados = processos[mask]
 
@@ -85,8 +75,11 @@ def get_agrupados(processos, filtro):
     quantidade_dms_todos = agrupado_todos["Quantidade de DMs"].sum()
     area_total_todos = agrupado_todos["Área total"].sum()
 
+    if filtro.ultima_arrecadacao:
+        filtrados = filtrados[filtrados.ultima_arrecadacao >= filtro.ultima_arrecadacao]
+
     if filtro.usando_titulares:
-        filtrados = filtrar_titulares(filtrados)
+        filtrados = filtrados.query("titular == True")
     else:
         fase_mask = processos.fase.isin(filtro.fases)
         filtrados = processos[fase_mask]
@@ -321,8 +314,7 @@ with st.container(border=True):
     st.markdown("### Processos")
     processos = baixar_processos()
     processos.columns = processos.columns.str.capitalize()
-    processos["Processo"] = processos["Numero"] + "/" + processos["Ano"]
-    processos = processos.drop(columns=["Numero", "Ano"])
+    processos = processos.drop(columns="Titular")
     processos.set_index("Processo", inplace=True)
     st.dataframe(processos, use_container_width=True)
     csv = convert_df(processos)
