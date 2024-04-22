@@ -19,7 +19,7 @@ st.markdown("# Dashboard SIGMINE<br>", unsafe_allow_html=True)
 
 
 @st.cache_resource
-def estabelecer_conexao():
+def conectar_db():
     conn = st.connection("postgresql", type="sql")
     return conn
 
@@ -33,41 +33,43 @@ def carregar_grupos():
 
 @st.cache_data(show_spinner="Processando dados...")
 def baixar_processos() -> pd.DataFrame:
-    conn = estabelecer_conexao()
-    query: pd.DataFrame = conn.query(
-        "SELECT * FROM dashboard_vale.dashboard_vale",
+    conn = conectar_db()
+    df: pd.DataFrame = conn.query(
+        "SELECT * FROM dashboard_vale.mv_dashboard_vale",
         show_spinner="Baixando dados do banco de dados...",
     )
 
-    query.fase = pd.Categorical(query.fase, ordered=True)
-    query.uf = pd.Categorical(query.uf, ordered=True)
+    df.fase = pd.Categorical(df.fase, ordered=True)
+    df.uf = pd.Categorical(df.uf, ordered=True)
 
     grupos = carregar_grupos()
-    query.nome = query.nome.replace(grupos)
-    return query
+    df.nome = df.nome.replace(grupos)
+    return df
 
 
-processos = baixar_processos()
-filtro = Filtro(processos)
+df = baixar_processos()
+filtro = Filtro(df)
 
 Stats = namedtuple("Stats", ["quantidade", "dms", "area"])
 
 
-def get_agrupados(processos: pd.DataFrame, filtro: Filtro):
-    mask = processos.uf.isin(filtro.ufs)
-    filtrados = processos[mask]
+def get_agrupados(df: pd.DataFrame, filtro: Filtro):
+    mask = df.uf.isin(filtro.uf)
+    df_todos = df[mask].drop_duplicates("processo")
 
     agrupado_todos = (
-        filtrados.groupby("nome")
+        df_todos.groupby("nome")
         .agg(
             quantidade_dms_todos=("nome", "count"),
             area_total_todos=("area_ha", "sum"),
+            total_recolhido_todos=("total_recolhido", "sum"),
         )
         .rename(
             index={"nome": "Nome da empresa"},
             columns={
                 "quantidade_dms_todos": "Quantidade de DMs",
                 "area_total_todos": "Área total",
+                "total_recolhido_todos": "Total recolhido",
             },
         )
     )
@@ -75,26 +77,25 @@ def get_agrupados(processos: pd.DataFrame, filtro: Filtro):
     quantidade_dms_todos = agrupado_todos["Quantidade de DMs"].sum()
     area_total_todos = agrupado_todos["Área total"].sum()
 
-    if filtro.ultima_arrecadacao:
-        filtrados = filtrados[filtrados.ultima_arrecadacao >= filtro.ultima_arrecadacao]
-
-    if filtro.usando_titulares:
-        filtrados = filtrados.query("titular == True")
+    if filtro.somente_titulares:
+        df_filtrado = df_todos.query("titular == True")
     else:
-        fase_mask = processos.fase.isin(filtro.fases)
-        filtrados = processos[fase_mask]
+        mask = df_todos.fase.isin(filtro.fase)
+        df_filtrado = df_todos[mask]
 
     agrupado_filtrados = (
-        filtrados.groupby("nome")
+        df_filtrado.groupby("nome")
         .agg(
             quantidade_dms_filtrados=("nome", "count"),
             area_total_filtrados=("area_ha", "sum"),
+            total_recolhido_filtrados=("total_recolhido", "sum"),
         )
         .rename(
             index={"nome": "Nome da empresa"},
             columns={
                 "quantidade_dms_filtrados": "Quantidade de DMs",
                 "area_total_filtrados": "Área total",
+                "total_recolhido_filtrados": "Total recolhido",
             },
         )
     )
@@ -109,7 +110,7 @@ def get_agrupados(processos: pd.DataFrame, filtro: Filtro):
         )
         .fillna(0)
         .rename_axis("Nome da empresa")
-        .sort_values(by="Área total (Filtrados)", ascending=False)
+        .sort_values(by="Área total (Todos)", ascending=False)
     )
 
     return (
@@ -119,7 +120,7 @@ def get_agrupados(processos: pd.DataFrame, filtro: Filtro):
     )
 
 
-stats_todos, stats_filtro, agrupados = get_agrupados(processos, filtro)
+stats_todos, stats_filtro, df_agrupado = get_agrupados(df, filtro)
 
 
 with st.container(border=True):
@@ -153,80 +154,81 @@ with st.container(border=True):
         value=f"{round(stats_filtro.area / 1e6, 2)}M ha",
     )
 
+barplot_container = st.container(border=True)
+barplot_cols = barplot_container.columns(2)
 
-def get_top(agrupados):
-    top_dms = agrupados["Quantidade de DMs (Filtrados)"].nlargest(filtro.quantidade)
-    top_area = agrupados["Área total (Filtrados)"].nlargest(filtro.quantidade)
-    top_dms_todos = agrupados["Quantidade de DMs (Todos)"].loc[top_dms.index]
-    top_area_todos = agrupados["Área total (Todos)"].loc[top_area.index]
+ordenar_dms = barplot_cols[0].selectbox(
+    "Ordenar por", ["Todos", "Filtrados"], index=0, key="ordenar_quantidade"
+)
+ordenar_area = barplot_cols[1].selectbox(
+    "Ordenar por", ["Todos", "Filtrados"], index=0, key="ordenar_area"
+)
 
-    top_dms.rename("Quantidade de DMs", inplace=True)
-    top_area.rename("Área total", inplace=True)
-    top_dms_todos.rename("Quantidade de DMs", inplace=True)
-    top_area_todos.rename("Área total", inplace=True)
 
-    top_dms = top_dms.reset_index()
-    top_area = top_area.reset_index()
-    top_dms_todos = top_dms_todos.reset_index()
-    top_area_todos = top_area_todos.reset_index()
+def get_top(agrupados, quantidade: int, ordenar_dms="Todos", ordenar_area="Todos"):
 
-    top_dms["Tipo"] = "Filtrados"
-    top_area["Tipo"] = "Filtrados"
-    top_dms_todos["Tipo"] = "Todos"
-    top_area_todos["Tipo"] = "Todos"
+    def _get_top(ordenacao, coluna):
+        match ordenacao:
+            case "Todos":
+                top_todos = agrupados[f"{coluna} (Todos)"].nlargest(quantidade)
+                top_filtrados = agrupados[f"{coluna} (Filtrados)"].loc[top_todos.index]
+            case "Filtrados":
+                top_filtrados = agrupados[f"{coluna} (Filtrados)"].nlargest(quantidade)
+                top_todos = agrupados[f"{coluna} (Todos)"].loc[top_filtrados.index]
 
-    top_dms = pd.concat([top_dms_todos, top_dms], join="inner")
-    top_area = pd.concat([top_area_todos, top_area], join="inner")
+        top_filtrados = top_filtrados.rename(coluna).reset_index()
+        top_todos = top_todos.rename(coluna).reset_index()
+        top_filtrados["Tipo"] = "Filtrados"
+        top_todos["Tipo"] = "Todos"
+        top = pd.concat([top_todos, top_filtrados], join="inner")
+        top["Nome da empresa"] = top["Nome da empresa"].str[:30]
+        top = top.sort_values(
+            by=["Tipo", coluna], ascending=(ordenacao == "Filtrados", False)
+        )
+        return top
 
-    # reduce nome da empresa size
-    top_dms["Nome da empresa"] = top_dms["Nome da empresa"].str[:30]
-    top_area["Nome da empresa"] = top_area["Nome da empresa"].str[:30]
-
+    top_dms = _get_top(ordenar_dms, "Quantidade de DMs")
+    top_area = _get_top(ordenar_area, "Área total")
     return top_dms, top_area
 
 
-top_dms, top_area = get_top(agrupados)
+top_dms, top_area = get_top(df_agrupado, filtro.quantidade, ordenar_dms, ordenar_area)
 
-with st.container(border=True):
-    st.markdown("## Gráficos de barras")
+barplot_container.markdown("## Gráficos de barras")
 
-    col1, col2 = st.columns(2)
+col1, col2 = barplot_cols
 
-    fig = px.bar(
-        data_frame=top_dms,
-        x="Quantidade de DMs",
-        y="Nome da empresa",
-        color="Tipo",
-        barmode="group",
-        title=f"Top {filtro.quantidade} empresas por quantidade de DMs",
-        text_auto=True,
-        template="plotly_white",
-    )
-    fig.update_layout(
-        height=filtro.altura, yaxis={"autorange": "reversed", "title": ""}
-    )
-    col1.plotly_chart(
-        fig,
-        use_container_width=True,
-    )
+fig = px.bar(
+    data_frame=top_dms,
+    x="Quantidade de DMs",
+    y="Nome da empresa",
+    color="Tipo",
+    barmode="group",
+    title=f"Top {filtro.quantidade} empresas por quantidade de DMs",
+    text_auto=True,
+    template="plotly_white",
+)
+fig.update_layout(height=filtro.altura, yaxis={"autorange": "reversed", "title": ""})
+col1.plotly_chart(
+    fig,
+    use_container_width=True,
+)
 
-    fig = px.bar(
-        data_frame=top_area,
-        x="Área total",
-        y="Nome da empresa",
-        color="Tipo",
-        barmode="group",
-        title=f"Top {filtro.quantidade} empresas por área total",
-        text_auto=True,
-        template="plotly_white",
-    )
-    fig.update_layout(
-        height=filtro.altura, yaxis={"autorange": "reversed", "title": ""}
-    )
-    col2.plotly_chart(
-        fig,
-        use_container_width=True,
-    )
+fig = px.bar(
+    data_frame=top_area,
+    x="Área total",
+    y="Nome da empresa",
+    color="Tipo",
+    barmode="group",
+    title=f"Top {filtro.quantidade} empresas por área total",
+    text_auto=True,
+    template="plotly_white",
+)
+fig.update_layout(height=filtro.altura, yaxis={"autorange": "reversed", "title": ""})
+col2.plotly_chart(
+    fig,
+    use_container_width=True,
+)
 
 with st.container(border=True):
     st.markdown("## Gráficos de pizza")
@@ -234,7 +236,7 @@ with st.container(border=True):
     col1, col2 = st.columns(2)
 
     fig = px.pie(
-        data_frame=top_dms[top_dms["Tipo"] == "Todos"],
+        data_frame=top_dms[top_dms.Tipo == "Todos"],
         names="Nome da empresa",
         values="Quantidade de DMs",
         hole=0.5,
@@ -248,7 +250,7 @@ with st.container(border=True):
     )
 
     fig = px.pie(
-        data_frame=top_area[top_area["Tipo"] == "Todos"],
+        data_frame=top_area[top_area.Tipo == "Todos"],
         names="Nome da empresa",
         values="Área total",
         hole=0.5,
@@ -263,7 +265,7 @@ with st.container(border=True):
     )
 
     fig = px.pie(
-        data_frame=top_dms[top_dms["Tipo"] == "Filtrados"],
+        data_frame=top_dms[top_dms.Tipo == "Filtrados"],
         names="Nome da empresa",
         values="Quantidade de DMs",
         hole=0.5,
@@ -278,7 +280,7 @@ with st.container(border=True):
     )
 
     fig = px.pie(
-        data_frame=top_area[top_area["Tipo"] == "Filtrados"],
+        data_frame=top_area[top_area.Tipo == "Filtrados"],
         names="Nome da empresa",
         values="Área total",
         hole=0.5,
@@ -299,11 +301,11 @@ def convert_df(df: pd.DataFrame) -> str:
 
 
 with st.container(border=True):
-    st.markdown("## Tabelas de dados")
+    st.markdown("## Tabelas")
 
     st.markdown("### Dados agrupados")
-    st.dataframe(agrupados, use_container_width=True)
-    csv = convert_df(agrupados)
+    st.dataframe(df_agrupado, use_container_width=True)
+    csv = convert_df(df_agrupado)
     st.download_button(
         label="Download CSV",
         data=csv,
@@ -311,13 +313,13 @@ with st.container(border=True):
         mime="text/csv",
     )
 
-    st.markdown("### Processos")
-    processos = baixar_processos()
-    processos.columns = processos.columns.str.capitalize()
-    processos = processos.drop(columns="Titular")
-    processos.set_index("Processo", inplace=True)
-    st.dataframe(processos, use_container_width=True)
-    csv = convert_df(processos)
+    st.markdown("### Dados brutos")
+    df = baixar_processos()
+    df.columns = df.columns.str.capitalize().str.replace("_", " ")
+    df = df.drop(columns="Titular")
+    df.set_index("Processo", inplace=True)
+    st.dataframe(df, use_container_width=True)
+    csv = convert_df(df)
     st.download_button(
         label="Download CSV",
         data=csv,
